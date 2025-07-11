@@ -1,6 +1,12 @@
 # File Collector - Project Structure and Code Analysis Tool
 
-A powerful Python script that creates comprehensive snapshots of your project structure, analyzes source code to extract functions and classes, estimates token counts for AI context windows, and optionally includes full file contents. Perfect for documentation, code reviews, and sharing project context with AI assistants like Claude Code.
+A Python script that creates comprehensive snapshots of your project structure, analyzes source code to extract functions and classes, estimates token counts for AI context windows, and optionally includes full file contents. Perfect for documentation, code reviews, and sharing project context with AI assistants like Claude Code.
+
+**Repository**: https://github.com/Stiander/filecollector  
+**Issues**: https://github.com/Stiander/filecollector/issues  
+**Author**: [@Stiander](https://github.com/Stiander) , Stian Broen - CTO @ Kobben AS
+**Contact** stian@kobben.no
+**Models used** v1 : Claude Sonnet 3.5 , v2,v3 : Claude Opus 4
 
 [![GitHub](https://img.shields.io/github/license/Stiander/filecollector)](https://github.com/Stiander/filecollector/blob/main/LICENSE)
 [![Python](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
@@ -1170,7 +1176,4 @@ Then run: `file_collector $(cat .file-collector)`
 
 ---
 
-**Repository**: https://github.com/Stiander/filecollector  
-**Issues**: https://github.com/Stiander/filecollector/issues  
-**Author**: [@Stiander](https://github.com/Stiander) , Stian Broen - CTO @ Kobben AS
-**Contact** stian@kobben.no
+
