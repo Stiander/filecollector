@@ -8,6 +8,7 @@ DESCRIPTION:
     comprehensive report containing:
     - ASCII tree structure of files and folders
     - Code analysis showing functions and classes in source files
+    - Token count estimates for each file
     - Optional full content of all collected files
     - Statistics about the collection process
 
@@ -24,14 +25,17 @@ INSTALLATION:
        - Reload: source ~/.bashrc
 
 BASIC USAGE:
-    python3 file_collector.py                    # Full collection with default settings
-    python3 file_collector.py --describe-only    # Structure + code analysis only
+    python3 file_collector.py                    # Structure + code analysis (default)
+    python3 file_collector.py --include-file-content  # Include full file contents
     python3 file_collector.py --simple           # Structure only, no code analysis
     
+OUTPUT:
+    Files are saved to .FILE_STATS/ directory in the current path with timestamp
+    Default filename: YYYYMMDD_HHMMSS_FILE_STATS.md
+    
 OUTPUT OPTIONS:
-    -o, --output FILE                # Specify output filename (default: filesCollection.txt)
+    -o, --output FILE                # Specify output filename
     --output-file FILE               # Alternative way to specify output filename
-    --output-folder PATH             # Specify output directory (absolute or relative path)
     
 FILTERING OPTIONS:
     --max-depth N                    # Limit directory traversal depth
@@ -43,22 +47,24 @@ FILTERING OPTIONS:
 ANALYSIS OPTIONS:
     --no-code-analysis               # Disable function/class extraction
     --no-stats                       # Don't include collection statistics
+    --no-token-count                 # Don't show token estimates
+    --diff FILE1 FILE2               # Compare two FILE_STATS files
 
 EXAMPLES:
     # Basic project snapshot
-    python3 file_collector.py --describe-only
+    python3 file_collector.py
     
-    # Save to specific location
-    python3 file_collector.py --output-folder ~/reports --output-file myproject.txt
+    # Include all file contents
+    python3 file_collector.py --include-file-content
+    
+    # Compare two snapshots
+    python3 file_collector.py --diff .FILE_STATS/20240101_120000_FILE_STATS.md .FILE_STATS/20240102_120000_FILE_STATS.md
     
     # Quick overview of large project
-    python3 file_collector.py --describe-only --max-depth 3 --max-size 0.5
+    python3 file_collector.py --max-depth 3 --max-size 0.5
     
-    # Collect only specific types
-    python3 file_collector.py --clear-ignore --add-ignore "*.log" "*.tmp"
-    
-    # Full collection for documentation
-    python3 file_collector.py -o project_full_source.txt
+    # Custom output name
+    python3 file_collector.py -o project_snapshot.md
 
 CODE ANALYSIS SUPPORT:
     The script can extract functions and classes from:
@@ -81,10 +87,12 @@ DEFAULT IGNORE PATTERNS:
     - Version Control: .git/, .svn/, .gitignore
     - IDEs: .vscode/, .idea/
     - OS: .DS_Store, Thumbs.db
+    - File Collector: .FILE_STATS/
     - And many more (use --show-ignore to see full list)
 
-AUTHOR: Enhanced File Collector Script
-VERSION: 2.0
+AUTHOR: Stian Broen - CTO @ Kobben AS
+CONTACT: stian@kobben.no
+VERSION: 3.0
 LICENSE: MIT
 """
 
@@ -95,6 +103,7 @@ from pathlib import Path
 from datetime import datetime
 import sys
 import re
+import string
 
 # Default ignore patterns for common project types
 DEFAULT_IGNORE_PATTERNS = {
@@ -127,10 +136,123 @@ DEFAULT_IGNORE_PATTERNS = {
     'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
     'poetry.lock', 'Pipfile.lock',
     
+    # File Collector specific
+    '.FILE_STATS/', '*_FILE_STATS.md',
+    
     # Other
     '*.min.js', '*.min.css', '*.map', '.dockerignore',
-    'filesCollection.txt'  # Avoid including output file
+    'filesCollection.txt'  # Legacy output file
 }
+
+
+def estimate_tokens(text):
+    """
+    Estimate token count for a text string.
+    Rough approximation: 1 token ≈ 4 characters for English text
+    """
+    # More accurate estimation based on common patterns
+    # Count words and special characters separately
+    
+    # Basic word count
+    words = len(text.split())
+    
+    # Count special characters and numbers
+    special_chars = sum(1 for c in text if c in string.punctuation or c.isdigit())
+    
+    # Rough estimation: words + (special_chars / 3)
+    # This accounts for the fact that special characters often form their own tokens
+    estimated_tokens = words + (special_chars // 3)
+    
+    # Alternative simple estimation
+    char_based = len(text) // 4
+    
+    # Return average of both methods for better accuracy
+    return (estimated_tokens + char_based) // 2
+
+
+def parse_file_stats(filepath):
+    """Parse a FILE_STATS file and extract structure information"""
+    structure = {}
+    current_path = []
+    
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            in_structure = False
+            for line in f:
+                if line.strip() == "File Structure:":
+                    in_structure = True
+                    continue
+                elif line.strip() == "Collection Statistics:" or line.strip() == "File Contents:":
+                    break
+                    
+                if in_structure and line.strip():
+                    # Parse tree structure
+                    # This is a simplified parser - could be enhanced
+                    if "├──" in line or "└──" in line:
+                        level = (len(line) - len(line.lstrip()) - 4) // 4
+                        filename = line.split("──", 1)[1].strip()
+                        # Remove any code analysis info
+                        if " -> " in filename:
+                            filename = filename.split(" -> ")[0]
+                        filename = filename.rstrip("/")
+                        
+                        # Update current path
+                        current_path = current_path[:level]
+                        current_path.append(filename)
+                        
+                        full_path = "/".join(current_path)
+                        structure[full_path] = {
+                            'exists': True,
+                            'type': 'dir' if line.rstrip().endswith("/") else 'file'
+                        }
+    
+    except Exception as e:
+        print(f"Error parsing {filepath}: {e}")
+        
+    return structure
+
+
+def compare_file_stats(file1, file2):
+    """Compare two FILE_STATS files and show differences"""
+    struct1 = parse_file_stats(file1)
+    struct2 = parse_file_stats(file2)
+    
+    all_paths = set(struct1.keys()) | set(struct2.keys())
+    
+    added = []
+    removed = []
+    
+    for path in sorted(all_paths):
+        if path in struct2 and path not in struct1:
+            added.append(path)
+        elif path in struct1 and path not in struct2:
+            removed.append(path)
+    
+    # Display results
+    print(f"\nComparing FILE_STATS:")
+    print(f"  Old: {file1}")
+    print(f"  New: {file2}")
+    print(f"{'=' * 60}\n")
+    
+    if added:
+        print(f"Added ({len(added)} items):")
+        for path in added:
+            print(f"  + {path}")
+        print()
+    
+    if removed:
+        print(f"Removed ({len(removed)} items):")
+        for path in removed:
+            print(f"  - {path}")
+        print()
+    
+    if not added and not removed:
+        print("No structural changes detected.")
+    
+    print(f"\nSummary:")
+    print(f"  Files/folders added: {len(added)}")
+    print(f"  Files/folders removed: {len(removed)}")
+
 
 class CodeAnalyzer:
     """Analyzes source code files to extract functions and classes"""
@@ -257,7 +379,9 @@ class CodeAnalyzer:
                                         func_name = match.group(i)
                                         break
                                 if func_name and not func_name.startswith('_'):  # Skip private functions in some languages
-                                    functions.add(func_name)
+                                    # Additional check for common non-function names
+                                    if func_name not in {'if', 'else', 'for', 'while', 'switch', 'case', 'try', 'catch'}:
+                                        functions.add(func_name)
                         except re.error:
                             pass  # Skip if regex fails
                     
@@ -286,17 +410,19 @@ class CodeAnalyzer:
 
 
 class FileCollector:
-    def __init__(self, ignore_patterns=None, max_file_size=1024*1024, max_depth=None, analyze_code=True):
+    def __init__(self, ignore_patterns=None, max_file_size=1024*1024, max_depth=None, analyze_code=True, show_tokens=True):
         self.ignore_patterns = ignore_patterns or DEFAULT_IGNORE_PATTERNS
         self.max_file_size = max_file_size  # Default 1MB
         self.max_depth = max_depth
         self.analyze_code = analyze_code
+        self.show_tokens = show_tokens
         self.stats = {
             'total_files': 0,
             'collected_files': 0,
             'ignored_files': 0,
             'total_size': 0,
-            'errors': 0
+            'errors': 0,
+            'total_tokens': 0
         }
     
     def should_ignore(self, path):
@@ -375,20 +501,33 @@ class FileCollector:
         else:
             tree_str = prefix + ("└── " if is_last else "├── ") + base_name
             
-            # Add code analysis for source files
-            if self.analyze_code and os.path.isfile(path) and CodeAnalyzer.is_source_code_file(path):
-                functions, classes = CodeAnalyzer.analyze_file(path)
-                code_info = []
+            # Add code analysis and token count for files
+            if os.path.isfile(path):
+                info_parts = []
                 
-                if functions:
-                    func_list = [f[:20] + '...' if len(f) > 20 else f for f in functions[:5]]
-                    code_info.append(f"Functions: ({', '.join(func_list)}{', ...' if len(functions) > 5 else ''})")
-                if classes:
-                    class_list = [c[:20] + '...' if len(c) > 20 else c for c in classes[:5]]
-                    code_info.append(f"Classes: ({', '.join(class_list)}{', ...' if len(classes) > 5 else ''})")
+                # Add token count if enabled for text files (not in simple mode)
+                if self.show_tokens and self.analyze_code and self.is_text_file(path):
+                    try:
+                        with open(path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                            tokens = estimate_tokens(content)
+                            info_parts.append(f"~{tokens} tokens")
+                            self.stats['total_tokens'] += tokens
+                    except:
+                        pass
                 
-                if code_info:
-                    tree_str += " -> " + ", ".join(code_info)
+                # Add functions and classes for source code files
+                if self.analyze_code and CodeAnalyzer.is_source_code_file(path):
+                    functions, classes = CodeAnalyzer.analyze_file(path)
+                    if functions:
+                        func_list = [f[:20] + '...' if len(f) > 20 else f for f in functions[:5]]
+                        info_parts.append(f"Functions: ({', '.join(func_list)}{', ...' if len(functions) > 5 else ''})")
+                    if classes:
+                        class_list = [c[:20] + '...' if len(c) > 20 else c for c in classes[:5]]
+                        info_parts.append(f"Classes: ({', '.join(class_list)}{', ...' if len(classes) > 5 else ''})")
+                
+                if info_parts:
+                    tree_str += " -> " + ", ".join(info_parts)
             
             elif os.path.isdir(path) and not self.should_ignore(path):
                 tree_str += "/"
@@ -463,10 +602,13 @@ class FileCollector:
         f.write(f"Files collected: {self.stats['collected_files']}\n")
         f.write(f"Files ignored: {self.stats['ignored_files']}\n")
         f.write(f"Total size: {self.format_size(self.stats['total_size'])}\n")
+        if self.show_tokens:
+            f.write(f"Estimated tokens: {self.stats['total_tokens']:,}\n")
         if self.stats['errors'] > 0:
             f.write(f"Errors encountered: {self.stats['errors']}\n")
         f.write(f"Collection date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write("\n")
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -474,29 +616,28 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                     # Collect all files with default ignore patterns
-  %(prog)s --simple           # Only show file structure, no contents
-  %(prog)s --describe-only    # Only show file structure with code analysis, no contents
-  %(prog)s -o output.txt      # Specify output file
-  %(prog)s --output-file report.txt --output-folder ~/reports  # Save to specific location
+  %(prog)s                     # Create structure analysis in .FILE_STATS/
+  %(prog)s --include-file-content  # Include full file contents
+  %(prog)s --simple           # Only show file structure, no code analysis
+  %(prog)s -o custom.md       # Specify custom output filename
+  %(prog)s --diff file1.md file2.md  # Compare two FILE_STATS files
   %(prog)s --max-depth 3      # Limit directory depth to 3 levels
   %(prog)s --max-size 5       # Set max file size to 5MB
   %(prog)s --no-stats         # Don't include statistics
   %(prog)s --no-code-analysis # Don't analyze functions/classes in source files
+  %(prog)s --no-token-count   # Don't show token estimates
   %(prog)s --add-ignore "*.tmp" "temp/"  # Add custom ignore patterns
         """
     )
     
+    parser.add_argument('--include-file-content', action='store_true',
+                       help='Include full file contents (default is structure and code analysis only)')
     parser.add_argument('-s', '--simple', action='store_true',
-                       help='Output only the file structure, skip file contents')
-    parser.add_argument('--describe-only', action='store_true',
-                       help='Output only the file structure with code analysis, skip file contents')
-    parser.add_argument('-o', '--output', default='filesCollection.txt',
-                       help='Output file name (default: filesCollection.txt)')
+                       help='Output only the file structure, skip code analysis')
+    parser.add_argument('-o', '--output', metavar='FILE',
+                       help='Output file name (default: timestamp-based FILE_STATS.md)')
     parser.add_argument('--output-file', metavar='FILE',
                        help='Alternative way to specify output filename (overrides -o)')
-    parser.add_argument('--output-folder', metavar='PATH',
-                       help='Directory to save output file (absolute or relative path)')
     parser.add_argument('--max-depth', type=int, metavar='N',
                        help='Maximum directory depth to traverse')
     parser.add_argument('--max-size', type=float, default=1.0, metavar='MB',
@@ -504,15 +645,24 @@ Examples:
     parser.add_argument('--no-stats', action='store_true',
                        help="Don't include collection statistics")
     parser.add_argument('--no-code-analysis', action='store_true',
-                       help="Don't analyze source files for functions and classes")
+                       help="Don't analyze functions/classes in source files")
     parser.add_argument('--add-ignore', nargs='+', metavar='PATTERN',
                        help='Additional patterns to ignore')
     parser.add_argument('--clear-ignore', action='store_true',
                        help='Clear default ignore patterns (use only custom ones)')
     parser.add_argument('--show-ignore', action='store_true',
                        help='Show current ignore patterns and exit')
+    parser.add_argument('--diff', nargs=2, metavar=('FILE1', 'FILE2'),
+                       help='Compare two FILE_STATS files and show differences')
+    parser.add_argument('--no-token-count', action='store_true',
+                       help="Don't include token count estimates in the tree")
     
     args = parser.parse_args()
+    
+    # Handle diff mode
+    if args.diff:
+        compare_file_stats(args.diff[0], args.diff[1])
+        return
     
     # Handle ignore patterns
     if args.clear_ignore:
@@ -523,36 +673,41 @@ Examples:
     if args.add_ignore:
         ignore_patterns.update(args.add_ignore)
     
-    # Handle output file and folder
-    output_filename = args.output_file if args.output_file else args.output
-    
-    if args.output_folder:
-        # Create output folder if it doesn't exist
-        output_folder = Path(args.output_folder)
-        output_folder.mkdir(parents=True, exist_ok=True)
-        output_path = output_folder / output_filename
-    else:
-        output_path = Path(output_filename)
-    
-    # Always ignore the output file
-    ignore_patterns.add(str(output_path))
-    ignore_patterns.add(output_path.name)
-    
     if args.show_ignore:
         print("Current ignore patterns:")
         for pattern in sorted(ignore_patterns):
             print(f"  {pattern}")
         return
     
+    # Create .FILE_STATS directory
+    current_path = os.getcwd()
+    file_stats_dir = os.path.join(current_path, ".FILE_STATS")
+    os.makedirs(file_stats_dir, exist_ok=True)
+    
+    # Handle output file
+    if args.output_file:
+        output_filename = args.output_file
+    elif args.output:
+        output_filename = args.output
+    else:
+        # Default timestamp-based filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"{timestamp}_FILE_STATS.md"
+    
+    output_path = os.path.join(file_stats_dir, output_filename)
+    
+    # Always ignore the .FILE_STATS directory
+    ignore_patterns.add(".FILE_STATS/")
+    ignore_patterns.add("FILE_STATS.md")
+    
     # Create collector
     collector = FileCollector(
         ignore_patterns=ignore_patterns,
         max_file_size=int(args.max_size * 1024 * 1024),
         max_depth=args.max_depth,
-        analyze_code=not args.no_code_analysis
+        analyze_code=not args.no_code_analysis and not args.simple,
+        show_tokens=not args.no_token_count and not args.simple
     )
-    
-    current_path = os.getcwd()
     
     print(f"Collecting files from: {current_path}")
     print(f"Output file: {output_path}")
@@ -560,38 +715,40 @@ Examples:
     if args.max_depth:
         print(f"Max depth: {args.max_depth}")
     print(f"Code analysis: {'Enabled' if not args.no_code_analysis else 'Disabled'}")
+    print(f"Token counting: {'Enabled' if not args.no_token_count else 'Disabled'}")
     print()
     
     # Collect all text files
     print("Scanning directory structure...")
     text_files = collector.collect_text_files(current_path)
     
-    if not args.simple and not args.describe_only:
+    if args.include_file_content:
         print(f"Found {collector.stats['collected_files']} text files to collect")
     print(f"Writing to {output_path}...")
     
     try:
         with open(output_path, 'w', encoding='utf-8') as f:
             # Write header
-            f.write(f"File Collection Report\n")
+            f.write(f"# File Collection Report\n")
             f.write(f"Generated from: {current_path}\n")
             f.write(f"{'=' * 50}\n\n")
             
             # Write ASCII tree structure
-            f.write("File Structure:\n")
-            f.write("==============\n\n")
+            f.write("## File Structure:\n")
+            f.write("================\n\n")
+            f.write("```\n")
             tree = collector.create_ascii_tree(current_path)
             f.write(tree)
-            f.write("\n")
+            f.write("```\n\n")
             
             # Write statistics if requested
             if not args.no_stats:
                 collector.write_statistics(f)
             
-            if not args.simple and not args.describe_only:
+            if args.include_file_content:
                 # Write file contents
-                f.write("File Contents:\n")
-                f.write("=============\n\n")
+                f.write("## File Contents:\n")
+                f.write("================\n\n")
                 
                 for i, file_path in enumerate(text_files, 1):
                     rel_path = os.path.relpath(file_path, current_path)
@@ -599,32 +756,37 @@ Examples:
                     # Progress indicator
                     print(f"\rProcessing file {i}/{len(text_files)}: {rel_path[:50]:<50}", end='', flush=True)
                     
-                    f.write(f"[{rel_path}]\n")
+                    f.write(f"### [{rel_path}]\n")
                     f.write("=" * (len(rel_path) + 2) + "\n\n")
                     
                     try:
                         with open(file_path, 'r', encoding='utf-8') as file:
                             content = file.read()
+                            f.write("```\n")
                             f.write(content)
                             if not content.endswith('\n'):
                                 f.write('\n')
+                            f.write("```\n")
                     except Exception as e:
                         f.write(f"Error reading file: {str(e)}\n")
                         collector.stats['errors'] += 1
                     
                     f.write("\n" + "-" * 80 + "\n\n")
         
-        if not args.simple and not args.describe_only:
+        if args.include_file_content:
             print(f"\n\nCollection complete! Output written to {output_path}")
         else:
             print(f"\nStructure analysis complete! Output written to {output_path}")
         
-        if not args.simple and not args.describe_only:
+        print(f"\nRemember to add '.FILE_STATS/' to your .gitignore file!")
+        
+        if args.include_file_content:
             print(f"Total size of collected files: {collector.format_size(collector.stats['total_size'])}")
         
     except Exception as e:
         print(f"\nError writing output file: {str(e)}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
