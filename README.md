@@ -94,144 +94,70 @@ project/
     └── test_main.py -> Functions: (test_setup, test_server), Classes: (TestMain)
 ```
 
-## Migration Guide from v2 to v3
-
-If you're upgrading from version 2, here are the key changes:
-
-### Command Changes
-
-| Old Command | New Command | Notes |
-|-------------|-------------|-------|
-| `file_collector` | `file_collector --include-file-content` | Old default included contents |
-| `file_collector --describe-only` | `file_collector` | Structure is now default |
-| `--output-folder ~/reports` | N/A | Always saves to `.FILE_STATS/` |
-| `-o myfile.txt` | `-o myfile.md` | Still works, but in `.FILE_STATS/` |
-
-### New Features to Try
-
-```bash
-# See token counts for each file
-file_collector
-
-# Compare what changed
-file_collector --diff old.md new.md  
-
-# Check token count quickly
-claude-check
-```
-
-### Update Your Workflow
-
-1. **Add to .gitignore:**
-   ```bash
-   echo ".FILE_STATS/" >> .gitignore
-   ```
-
-2. **Update aliases:**
-   ```bash
-   # Old alias
-   alias fcollect-quick='file_collector --describe-only --max-depth 3'
-   
-   # New alias (--describe-only removed)
-   alias fcollect-quick='file_collector --max-depth 3'
-   ```
-
-3. **Update scripts:**
-   - Remove `--describe-only` (it's now default)
-   - Add `--include-file-content` where you need file contents
-   - Remove `--output-folder` arguments
-
-## Installation Requirements
-
-- **Python 3.6+** - The script is written in Python
-- **Operating System** - Works on Linux, WSL, macOS, and Windows
-- **No external dependencies** - Uses only Python standard library
-
-### For Claude Code Users
-
-- **WSL (Windows Subsystem for Linux)** - Required if using Windows
-- **Git** - For cloning the repository (optional, can download directly)
-- **Text editor** - For viewing output files (VS Code, Cursor, etc.)
-
-### Check Requirements
-
-```bash
-# Check Python version
-python3 --version
-
-# Check if in WSL (for Windows users)
-uname -a | grep -i microsoft
-
-# If Python is not installed:
-# Ubuntu/Debian/WSL:
-sudo apt update && sudo apt install python3
-
-# macOS:
-brew install python3
-
-# Windows:
-# Download from https://www.python.org/downloads/
-```
-
 ## Installation
 
-### Install from GitHub Repository
-
-#### Method 1: Quick Install with Installer Script
-
+### Quick Install (Recommended)
 ```bash
-# Clone the repository
+# Clone and install
 git clone https://github.com/Stiander/filecollector.git
-cd filecollector
+cd filecollector && bash install_file_collector.sh && source ~/.bashrc
 
-# Run the installer
-bash install_file_collector.sh
-
-# Reload your shell configuration
-source ~/.bashrc  # or ~/.zshrc for Zsh users
+# Verify it works
+file_collector --help
 ```
 
-#### Method 2: Direct Download and Install
-
+### Alternative: Direct Download
 ```bash
-# Download just the script directly to ~/bin
+# Download and install directly
 mkdir -p ~/bin
 curl -o ~/bin/file_collector https://raw.githubusercontent.com/Stiander/filecollector/main/file_collector.py
 chmod +x ~/bin/file_collector
 
-# Add ~/bin to PATH if not already there
-echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-#### Method 3: Clone and Link
-
-```bash
-# Clone to a permanent location
-mkdir -p ~/tools
-git clone https://github.com/Stiander/filecollector.git ~/tools/filecollector
-
-# Create symbolic link in ~/bin
-mkdir -p ~/bin
-ln -s ~/tools/filecollector/file_collector.py ~/bin/file_collector
-chmod +x ~/tools/filecollector/file_collector.py
-
-# Add to PATH
+# Add to PATH if not already there
 echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 
-# To update later:
-cd ~/tools/filecollector && git pull
+# Test it works
+file_collector --help
 ```
 
-### Install for Claude Code
+### Troubleshooting Installation
 
-When using Claude Code in WSL environments, follow these specific steps:
+**"file_collector: command not found"**
 
-#### 1. Install in WSL
+This usually means `~/bin` is not in your system's `PATH`.
 
 ```bash
-# Open your WSL terminal and run:
+# 1. Check if file exists
+ls -la ~/bin/file_collector
+
+# 2. Check if ~/bin is in PATH
+echo $PATH | grep -q "$HOME/bin" && echo "✅ ~/bin in PATH" || echo "❌ ~/bin not in PATH"
+
+# 3. If not in PATH, add it and reload your shell:
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# 4. If the file doesn't exist, the installation failed. Try again.
+```
+
+**"Error: Please replace this file with the actual file_collector.py script"**
+
+This means the installer may have created a placeholder. Copy the real script:
+```bash
+# Navigate to the cloned repository
+cd path/to/filecollector
+# Copy the correct script
+cp file_collector.py ~/bin/file_collector
+chmod +x ~/bin/file_collector
+```
+
+### For Claude Code Users (WSL/Linux)
+
+A clear, step-by-step workflow for getting started.
+
+**Step 1: Install**
+```bash
 cd ~
 git clone https://github.com/Stiander/filecollector.git
 cd filecollector
@@ -239,149 +165,28 @@ bash install_file_collector.sh
 source ~/.bashrc
 ```
 
-#### 2. Verify Installation
-
+**Step 2: Verify Installation**
 ```bash
-# Test the installation
 file_collector --help
-
-# Create a test snapshot
-file_collector --describe-only -o test_output.txt
+# You should see the help text, not "command not found" or "replace this file".
 ```
 
-#### 3. Use with Claude Code
-
-In your Claude Code session:
-
+**Step 3: Test on Your Project**
 ```bash
-# Navigate to your project
+# Navigate to your project directory
 cd /path/to/your/project
 
-# Generate project structure for Claude
-file_collector --describe-only -o project_context.txt
+# Run the collector
+file_collector --max-depth 3
 
-# Or use the quick alias
-fcollect-quick
-
-# For specific components
-cd src/components
-file_collector --describe-only --max-depth 2
+# Check for the output directory
+ls .FILE_STATS/
+# You should see a generated file inside.
 ```
 
-#### 4. Set Up Convenient Aliases for Claude Code
-
-Add these to your `~/.bashrc` or `~/.zshrc`:
-
+**Step 4: Add Output Directory to .gitignore**
 ```bash
-# Claude Code specific aliases
-alias claude-context='file_collector --describe-only --max-depth 4 --output-folder ~/claude-contexts --output-file "$(basename $(pwd))_$(date +%Y%m%d_%H%M%S).txt"'
-alias claude-full='file_collector --max-size 0.5 --output-folder ~/claude-contexts --output-file "$(basename $(pwd))_full_$(date +%Y%m%d_%H%M%S).txt"'
-alias claude-quick='file_collector --describe-only --max-depth 3 --no-stats'
-```
-
-### Manual Installation
-
-1. **Create a directory for the script:**
-
-```bash
-mkdir -p ~/bin
-```
-
-2. **Create the script file:**
-
-```bash
-nano ~/bin/file_collector
-```
-
-3. **Copy the entire script content into the file**
-
-4. **Make it executable:**
-
-```bash
-chmod +x ~/bin/file_collector
-```
-
-5. **Add to PATH (choose your shell):**
-
-```bash
-# For Bash
-echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-
-# For Zsh
-echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-
-# For Fish
-echo 'set -gx PATH $HOME/bin $PATH' >> ~/.config/fish/config.fish
-```
-
-### Windows Integration
-
-If you're using Windows with WSL:
-
-1. **Access from Windows Explorer:**
-   ```
-   \\wsl$\Ubuntu\home\YOUR_USERNAME\bin\file_collector
-   ```
-
-2. **Edit with Cursor IDE:**
-   ```bash
-   # From WSL terminal
-   code ~/bin/file_collector
-   ```
-
-3. **Create Windows shortcut:**
-   ```batch
-   wsl.exe -e bash -c "cd /mnt/c/YourProject && file_collector --describe-only"
-   ```
-
-### Updating File Collector
-
-If you installed using git clone:
-
-```bash
-# Method 3 (symbolic link method)
-cd ~/tools/filecollector
-git pull
-
-# Method 1 (installer method) - re-run installer
-cd ~/filecollector
-git pull
-bash install_file_collector.sh
-```
-
-If you installed directly:
-
-```bash
-# Re-download the latest version
-curl -o ~/bin/file_collector https://raw.githubusercontent.com/Stiander/filecollector/main/file_collector.py
-chmod +x ~/bin/file_collector
-```
-
-### Verify Installation
-
-After installation, verify everything is working:
-
-```bash
-# Check if file_collector is in PATH
-which file_collector
-
-# Test basic functionality
-file_collector --help
-
-# Create a test run
-mkdir test_project && cd test_project
-echo "# Test" > README.md
-echo "print('test')" > test.py
-file_collector
-
-# Check output
-ls -la .FILE_STATS/
-cat .FILE_STATS/*_FILE_STATS.md
-
-# Clean up
-cd .. && rm -rf test_project
+echo ".FILE_STATS/" >> .gitignore
 ```
 
 ## Usage
